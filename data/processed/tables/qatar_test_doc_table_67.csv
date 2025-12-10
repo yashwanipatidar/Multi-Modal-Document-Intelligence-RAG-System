@@ -1,0 +1,25 @@
+0,1
+Source: IMF staff calculations.,
+4.,"Qatar’s nowcasting results, which fit historical data well, point to a gradual recovery"
+from the post-World Cup growth,
+,Figure III. 4. Qatar: Model Selection
+normalization. Various nowcasting models,
+,(Out of sample performance)
+are compared based on their out-of-sample,
+forecast performances (Figure 4).,
+"The Support Vector Machine (RBF) model,",
+"with the lowest RMSE, proves to be the most",
+effective one for Qatar’s non-hydrocarbon,
+GDP growth prediction. An average RMSE of,
+1.4 across the best models indicates Qatar’s,
+nowcasting framework performs comparably,
+to those for regional peers (see Korniyenko et,
+"al, 2023). Figure 5 shows the overall fit of the",
+model up to 2023Q4 and the nowcasting,
+,Source: IMF staff calculations.
+"results up to 2024Q3, which point to a",
+gradual recovery from the post-World Cup,
+growth trough. Table 1 provides a list of variables used in the final Qatar model. Nine of the,
+,"variables are Qatar-specific, covering the real sector (e.g., inflation and oil activities), external sector"
+,"(e.g., export oil price to China), and financial sector (e.g., 3-month deposit rate and credit facilities)."
+The remaining 4 series capture economic activities in Qatar’s key trading partners.,

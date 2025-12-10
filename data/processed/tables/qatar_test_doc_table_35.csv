@@ -1,0 +1,24 @@
+0,1,2,3,4,5,6
+,"AI Exposure and Complemetarity by Occupation, 2023",,,,,
+,(Higher value = higher exposure/complementarity),,,,,
+,,1.2,,,,
+2023,,,,,,
+,,,,,Managers,
+2014,,1,,,,
+Skilled agricultural,,,,,,Professionals
+workers,,0.8,,,,
+,Craft and related,,Technicians,,,
+,trades workers,,,,,
+,,0.6,,,,xposure
+"-0.2
+0.0",0.2,"0.4
+0.4",0.6,0.8,1.0,1.2 E
+,,,Services and sales,,,
+,,,workers,,,
+,,0.2,,,,
+Elementary,,,,,,
+occupations,,0,,,,
+,Plant and machine,,,,,
+,operators,,,,Clerks,
+,,-0.2,,,,
+,,Complementarity,,,,

@@ -1,0 +1,17 @@
+0,1,2,3,4,5,6
+,,Figure IV. 7. Qatar: Near-Term Risk Analysis,,,,
+Year of data,2020,2021,2022,2023,0.6,
+,,,,,,Evolution  of Mechanical  Near-Term  Signal
+"To predict stress in [t+1, t+2]",2021-22,2022-23,2023-24,2024-25,,
+Logit stress probability (LSP),0.535,0.260,0.040,0.008,0.5,
+Change in LSP,0.369,-0.275,-0.220,-0.032,,
+,,,,,0.4,
+due to:,,,,,,
+Institutional quality,-0.035,-0.026,-0.003,0.000,,
+,,,,,0.3,
+Stress history,0.000,0.000,0.000,0.000,,
+,,,,,High risk,
+Cyclical position,0.236,0.354,-0.241,-0.031,,
+,,,,,0.2,
+Debt burden & buffers,0.022,-0.339,-0.034,0.015,,Logit stress
+Global conditions,0.162,-0.272,0.073,-0.013,0.1,probability

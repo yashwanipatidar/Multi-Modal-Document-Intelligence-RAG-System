@@ -1,0 +1,89 @@
+0,1,2,3,4,5
+,"Value
+Contrib 1/",Percentile in peer group 2/,,,
+Final Fanchart (Percent of GDP),Debt fanchart module,,,,
+150,,,,,
+5-25 pct,"Fanchart width
+88.7
+1.3",,,,
+25-50 pct,(percent of GDP),,,,
+50-75 pct,,,,,
+75-95 pct,"Probability of debt non-
+4.6
+0.0",,,,
+100,,,,,
+Actual,stabilization (percent),,,,
+,"Terminal debt-to-GDP x
+12.1
+0.3",,,,
+,institutions index,,,,
+50,,,,,
+,0,25,50,75,100
+,"1.6
+Debt fanchart index (DFI)",,,,
+0,,,,,
+"2019
+2021
+2023
+2025
+2027","2029
+Risk signal: 3/
+Moderate",,,,
+Gross Financing Needs (Percent of GDP),Gross financing needs (GFN) module,,,,
+30,,,,,
+Financing provided by banks,"Average baseline GFN
+-1.7
+-0.6",,,,
+,(percent of GDP),,,,
+Actual,,,,,
+20,,,,,
+,"Initial Banks' claims on the 
+15.5
+5.0",,,,
+Baseline,,,,,
+,gen. govt (pct bank assets),,,,
+"Stress scenario
+10",,,,,
+,"Chg. In banks' claims in
+1.5
+0.5",,,,
+,stress (pct banks' assets),,,,
+0,0,25,50,75,100
+-10,"5.0
+GFN financeability index (GFI)",,,,
+"2025
+2027
+2019
+2021
+2023",2029,,,,
+,"Risk signal: 4/
+Low",,,,
+,Triggered stress tests (stress tests not activated in gray),,,,
+"Banking crisis
+Commodity prices","Exchange rate
+Contingent liab.",Natural disaster,,,
+Medium-Term Index (Index Number),Medium-term risk analysis,,,,
+0.6,Value,,,,
+,Value,,,,
+,(normalized),,Weight,,Contribution
+0.4,"Debt fanchart index 
+1.6
+0.4",,0.5,,0.2
+,"GFN finaceability index 
+5.0
+0.1",,0.5,,0.0
+0.2,,,,,
+,"0.2
+Medium-term index",,,,
+0.0,"Risk signal: 5/
+Low",,,,
+"2021
+2022
+2023
+2024","Final assessment: 
+Moderate",,,,
+"Medium-term index
+Low risk",,,,,
+,"Prob. of missed crisis, 2024-2029, if stress not predicted: 9.1 pct.",,,,
+High risk,"Prob. of false alarms, 2024-2029, if stress predicted: 48.9 pct.",,,,
+,"Commentary: Medium-term risks are assessed as low, consistent with the mechanical ""low"" signal. Gross financing needs under the stress scenario are",,,,

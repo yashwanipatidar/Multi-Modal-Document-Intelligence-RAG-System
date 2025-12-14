@@ -69,7 +69,7 @@ def build_table_index(table_paths: List[Path], chunk_large_tables: bool = True) 
         table_paths: List of CSV file paths containing extracted tables
         chunk_large_tables: Whether to split large tables into chunks
     """
-    print("🔨 Building table index...")
+    print("Building table index...")
     
     model = SentenceTransformer(EMBEDDING_MODEL_NAME)
     embeddings = []
@@ -100,14 +100,14 @@ def build_table_index(table_paths: List[Path], chunk_large_tables: bool = True) 
                     "modality": "table"
                 })
             
-            print(f"  ✓ Indexed {table_path.name} ({len(chunks)} chunk(s))")
+            print(f"Indexed {table_path.name} ({len(chunks)} chunk(s))")
             
         except Exception as e:
-            print(f"  ⚠ Error indexing {table_path.name}: {e}")
+            print(f"  Error indexing {table_path.name}: {e}")
             continue
 
     if len(embeddings) == 0:
-        print("⚠ No table embeddings created. Check your table files.")
+        print("No table embeddings created. Check your table files.")
         return
 
     # Create and save FAISS index
@@ -120,7 +120,7 @@ def build_table_index(table_paths: List[Path], chunk_large_tables: bool = True) 
     with open(TABLE_METADATA, "wb") as f:
         pickle.dump(metadata, f)
 
-    print(f"✅ Table index created: {len(metadata)} table chunks indexed")
+    print(f"Table index created: {len(metadata)} table chunks indexed")
     print(f"   Saved to: {TABLE_FAISS}")
     print(f"   Metadata: {TABLE_METADATA}")
 

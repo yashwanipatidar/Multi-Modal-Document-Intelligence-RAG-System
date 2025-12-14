@@ -18,12 +18,12 @@ def extract_all_tables():
     table_files = []
 
     for pdf_path in RAW_DOCS_DIR.glob("*.pdf"):
-        print(f"📄 Extracting tables from: {pdf_path.name}")
+        print(f"Extracting tables from: {pdf_path.name}")
 
         try:
             tables = camelot.read_pdf(str(pdf_path), pages="all", flavor="stream")
         except Exception as e:
-            print(f"❌ Error reading {pdf_path.name}: {e}")
+            print(f" Error reading {pdf_path.name}: {e}")
             continue
 
         print(f"   → {len(tables)} tables found")
@@ -35,6 +35,6 @@ def extract_all_tables():
             df.to_csv(output_path, index=False)
             table_files.append(output_path)
 
-            print(f"   ✓ Saved table: {output_path.name}")
+            print(f"Saved table: {output_path.name}")
 
     return table_files

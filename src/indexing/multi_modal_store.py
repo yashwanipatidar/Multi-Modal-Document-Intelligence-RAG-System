@@ -38,14 +38,14 @@ class MultiModalVectorStore:
             chunks: List of dicts with 'content', 'type', 'source', 'modality', etc.
             table_paths: Optional list of CSV table file paths
         """
-        print("🔨 Building unified multi-modal index...")
+        print(" Building unified multi-modal index...")
         
         all_embeddings = []
         all_metadata = []
         
         # ==================== HANDLE TEXT & IMAGE CHUNKS ====================
         if chunks:
-            print(f"  📝 Processing {len(chunks)} chunks (text + images)...")
+            print(f" Processing {len(chunks)} chunks (text + images)...")
             
             # Use the multi-modal embedder for mixed content
             result = self.embedder.encode_mixed(chunks)
@@ -77,7 +77,7 @@ class MultiModalVectorStore:
         
         # ==================== HANDLE TABLES ====================
         if table_paths and len(table_paths) > 0:
-            print(f"  📊 Processing {len(table_paths)} tables...")
+            print(f" Processing {len(table_paths)} tables...")
             
             import pandas as pd
             
@@ -110,7 +110,7 @@ class MultiModalVectorStore:
                     print(f"    ⚠ Error processing {table_path.name}: {e}")
         
         if len(all_embeddings) == 0:
-            print("❌ No embeddings created. Check your inputs.")
+            print("No embeddings created. Check your inputs.")
             return
         
         # ==================== CREATE FAISS INDEX ====================
@@ -129,7 +129,7 @@ class MultiModalVectorStore:
         self.index = index
         self.metadata = all_metadata
         
-        print(f"\n✅ Multi-modal index built successfully!")
+        print(f"\n Multi-modal index built successfully!")
         print(f"   Total items indexed: {len(all_metadata)}")
         print(f"   - Text chunks: {sum(1 for m in all_metadata if m['type'] == 'text')}")
         print(f"   - Images: {sum(1 for m in all_metadata if m['type'] == 'image')}")
@@ -146,7 +146,7 @@ class MultiModalVectorStore:
         with open(MULTI_MODAL_METADATA, "rb") as f:
             self.metadata = pickle.load(f)
         
-        print(f"✅ Loaded multi-modal index with {len(self.metadata)} items")
+        print(f" Loaded multi-modal index with {len(self.metadata)} items")
     
     def search(self, query: str, top_k: int = 5, modality_filter: str = None) -> List[Dict]:
         """

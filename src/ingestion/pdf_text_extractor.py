@@ -45,7 +45,7 @@ def extract_images_from_pdf(pdf_path: Path, perform_ocr: bool = True) -> List[Di
             try:
                 images = page.images
             except Exception as e:
-                print(f"   ⚠ Could not extract images from page {page_num}: {e}")
+                print(f" Could not extract images from page {page_num}: {e}")
                 continue
             
             for img_idx, img_obj in enumerate(images):
@@ -68,7 +68,7 @@ def extract_images_from_pdf(pdf_path: Path, perform_ocr: bool = True) -> List[Di
                             ocr_text = pytesseract.image_to_string(img)
                             ocr_text = ocr_text.strip()
                         except Exception as e:
-                            print(f"   ⚠ OCR failed for {img_filename}: {e}")
+                            print(f"OCR failed for {img_filename}: {e}")
                     
                     image_chunks.append({
                         "page": page_num,
@@ -81,7 +81,7 @@ def extract_images_from_pdf(pdf_path: Path, perform_ocr: bool = True) -> List[Di
                     })
                     
                 except Exception as e:
-                    print(f"   ⚠ Error processing image {img_idx} on page {page_num}: {e}")
+                    print(f"Error processing image {img_idx} on page {page_num}: {e}")
                     continue
     
     return image_chunks
@@ -153,24 +153,24 @@ def ingest_all_pdfs(include_images: bool = True, ocr_enabled: bool = True) -> Li
         return []
 
     for pdf in pdf_files:
-        print(f"📄 Processing {pdf.name}...")
+        print(f" Processing {pdf.name}...")
         
         # Extract text
         print(f"  → Extracting text...")
         page_chunks = extract_text_from_pdf(pdf)
         chunked = simple_chunk_text(page_chunks)
         all_chunks.extend(chunked)
-        print(f"    ✓ {len(chunked)} text chunks extracted")
+        print(f"{len(chunked)} text chunks extracted")
         
         # Extract images with OCR
         if include_images:
             print(f"  → Extracting images with OCR...")
             image_chunks = extract_images_from_pdf(pdf, perform_ocr=ocr_enabled)
             all_chunks.extend(image_chunks)
-            print(f"    ✓ {len(image_chunks)} images extracted")
+            print(f"{len(image_chunks)} images extracted")
 
-    print(f"\n✅ Total chunks created: {len(all_chunks)}")
-    print(f"   - Text chunks: {sum(1 for c in all_chunks if c.get('modality') == 'text')}")
-    print(f"   - Image chunks: {sum(1 for c in all_chunks if c.get('modality') == 'image')}")
+    print(f"\n Total chunks created: {len(all_chunks)}")
+    print(f" Text chunks: {sum(1 for c in all_chunks if c.get('modality') == 'text')}")
+    print(f" Image chunks: {sum(1 for c in all_chunks if c.get('modality') == 'image')}")
     
     return all_chunks

@@ -42,4 +42,4 @@ GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
 
 if GROQ_API_KEY is None:
-    print("⚠ WARNING: GROQ_API_KEY not found in .env!")
+    print(" WARNING: GROQ_API_KEY not found in .env!")

@@ -9,7 +9,7 @@ from ..config import EMBEDDING_MODEL_NAME
 class TextEmbedder:
     """Text-only embedder using sentence-transformers."""
     def __init__(self, model_name: str = EMBEDDING_MODEL_NAME):
-        print(f"🔧 Loading text embedding model: {model_name}")
+        print(f" Loading text embedding model: {model_name}")
         self.model = SentenceTransformer(model_name)
         self.modality = "text"
 
@@ -33,7 +33,7 @@ class MultiModalEmbedder:
         Initialize multi-modal embedder.
         Uses CLIP model for vision-text alignment.
         """
-        print(f"🔧 Loading multi-modal embedding model: {model_name}")
+        print(f"Loading multi-modal embedding model: {model_name}")
         self.model = SentenceTransformer(model_name)
         self.modality = "multi-modal"
         self.text_model = SentenceTransformer(EMBEDDING_MODEL_NAME)  # For pure text
@@ -69,7 +69,7 @@ class MultiModalEmbedder:
                 images.append(img)
                 valid_paths.append(img_path)
             except Exception as e:
-                print(f"⚠ Could not load image {img_path}: {e}")
+                print(f"Could not load image {img_path}: {e}")
         
         if not images:
             return np.array([]).reshape(0, self.model.get_sentence_embedding_dimension())

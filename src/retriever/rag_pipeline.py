@@ -124,7 +124,7 @@ def answer_query(query: str, top_k: int = 5, use_multi_modal: bool = True) -> Di
     # ==================== NO RESULTS ====================
     if not retrieved:
         return {
-            "answer": "❌ No relevant information found in the document collection.",
+            "answer": "No relevant information found in the document collection.",
             "context": "",
             "citations": "",
             "retrieved": [],

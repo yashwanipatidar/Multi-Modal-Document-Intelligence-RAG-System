@@ -1,8 +1,8 @@
-# 📄 Multi-Modal Document Intelligence RAG System
+#  Multi-Modal Document Intelligence RAG System
 
 A sophisticated Retrieval-Augmented Generation (RAG) system designed to handle complex, information-rich documents with multiple modalities: **text**, **tables**, and **images (with OCR)**.
 
-## 🎯 Features
+##  Features
 
 ### Core Capabilities
 - **Multi-Modal Ingestion**: Extracts text, tables, and images from PDFs

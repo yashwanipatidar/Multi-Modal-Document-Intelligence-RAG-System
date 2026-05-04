@@ -18,9 +18,6 @@ import plotly.graph_objects as go
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.retriever.rag_pipeline import answer_query, answer_query_grouped_by_modality
-from src.ingestion.pdf_text_extractor import ingest_all_pdfs
-from src.indexing.multi_modal_store import build_multi_modal_index
-from src.ingestion.pdf_table_extractor import extract_all_tables
 from src.config import RAW_DOCS_DIR, PROCESSED_DIR
 
 
@@ -129,6 +126,10 @@ with st.sidebar:
     if st.button(" Build/Rebuild Index", use_container_width=True):
         with st.spinner("Building index... This may take a moment..."):
             try:
+                from src.ingestion.pdf_text_extractor import ingest_all_pdfs
+                from src.indexing.multi_modal_store import build_multi_modal_index
+                from src.ingestion.pdf_table_extractor import extract_all_tables
+
                 # Step 1: Ingest PDFs
                 st.status("Step 1: Extracting text and images from PDFs...")
                 chunks = ingest_all_pdfs(include_images=True, ocr_enabled=True)

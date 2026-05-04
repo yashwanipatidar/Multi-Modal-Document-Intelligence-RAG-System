@@ -1,12 +1,9 @@
 # src/ingestion/__init__.py
-"""Document ingestion modules."""
+"""Document ingestion modules.
 
-from .pdf_text_extractor import ingest_all_pdfs, extract_text_from_pdf, extract_images_from_pdf
-from .pdf_table_extractor import extract_all_tables
+This package intentionally avoids eager imports because some submodules
+pull in heavy optional dependencies such as Camelot/OpenCV. Import the
+specific submodule you need instead of importing the package for side effects.
+"""
 
-__all__ = [
-    "ingest_all_pdfs",
-    "extract_text_from_pdf",
-    "extract_images_from_pdf",
-    "extract_all_tables"
-]
+__all__ = []

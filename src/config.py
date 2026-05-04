@@ -7,6 +7,23 @@ from dotenv import load_dotenv
 # Load env file
 load_dotenv()
 
+
+def _get_setting(name: str, default=None):
+    """Resolve settings from environment first, then Streamlit secrets."""
+    value = os.getenv(name)
+    if value:
+        return value
+
+    try:
+        import streamlit as st
+
+        if hasattr(st, "secrets") and name in st.secrets:
+            return st.secrets[name]
+    except Exception:
+        pass
+
+    return default
+
 # -------------------------
 # PATH CONFIGURATION
 # -------------------------
@@ -38,8 +55,8 @@ METADATA_PATH = INDEX_DIR / "text_metadata.pkl"
 # GROQ CONFIG
 # -------------------------
 
-GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+GROQ_API_KEY = _get_setting("GROQ_API_KEY")
+GROQ_MODEL = _get_setting("GROQ_MODEL", "llama-3.3-70b-versatile")
 
 if GROQ_API_KEY is None:
-    print(" WARNING: GROQ_API_KEY not found in .env!")
+    print(" WARNING: GROQ_API_KEY not found in environment or Streamlit secrets!")

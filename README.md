@@ -56,6 +56,17 @@ OPENAI_API_KEY=your_openai_key_here
 
 Get a free Groq API key from: [https://console.groq.com](https://console.groq.com)
 
+### Streamlit Community Cloud Secrets
+
+If you deploy on Streamlit Community Cloud, add the same values in the app's Secrets panel using valid TOML:
+
+```toml
+GROQ_API_KEY = "your_groq_api_key_here"
+GROQ_MODEL = "llama-3.3-70b-versatile"
+```
+
+Do not paste log text, colons, or extra labels into Secrets.
+
 ### 3. Add Documents
 
 Place your PDF documents in:

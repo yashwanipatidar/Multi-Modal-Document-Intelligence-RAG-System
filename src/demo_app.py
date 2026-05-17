@@ -6,7 +6,6 @@ Interactive interface for document Q&A with multi-modal retrieval
 """
 
 import streamlit as st
-import time
 from pathlib import Path
 from typing import List, Dict
 import sys
@@ -14,8 +13,6 @@ import uuid
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-import json
-from datetime import datetime
 
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -23,7 +20,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from src.retriever.rag_pipeline import answer_query, answer_query_grouped_by_modality
 from src.config import PROCESSED_DIR
 from src.indexing.multi_modal_store import MultiModalVectorStore
-from src.operation_tracker import get_operation_tracker, OperationStatus, OperationTimer
+from src.operation_tracker import get_operation_tracker, OperationTimer
 
 
 MAX_UPLOAD_MB = 25
@@ -190,6 +187,8 @@ def _save_uploaded_files(uploaded_files, raw_docs_dir: Path) -> List[Path]:
         existing_pdf.unlink(missing_ok=True)
 
     saved_paths: List[Path] = []
+    uploaded_details = []
+    total_size_mb = 0.0
     for upload in uploaded_files:
         if not upload.name.lower().endswith(".pdf"):
             raise ValueError(f"Unsupported file type: {upload.name}")
@@ -201,13 +200,16 @@ def _save_uploaded_files(uploaded_files, raw_docs_dir: Path) -> List[Path]:
         destination = raw_docs_dir / Path(upload.name).name
         destination.write_bytes(upload.getvalue())
         saved_paths.append(destination)
-        
-        # Track each file upload
-        tracker.add_detail(f"file_{upload.name}", {
+
+        uploaded_details.append({
+            "name": upload.name,
             "size_mb": round(file_size_mb, 2),
-            "path": str(destination),
-            "status": "saved"
+            "status": "saved",
         })
+        total_size_mb += file_size_mb
+
+    tracker.add_detail("uploaded_files", uploaded_details)
+    tracker.add_detail("total_upload_size_mb", round(total_size_mb, 2))
 
     return saved_paths
 
@@ -245,15 +247,14 @@ with st.sidebar:
             st.warning("Please select at least one PDF file.")
         else:
             tracker = _get_or_create_tracker()
-            with OperationTimer(tracker, "PDF Upload", {"file_count": len(uploaded_files)}):
-                try:
+            try:
+                with OperationTimer(tracker, "PDF Upload", {"file_count": len(uploaded_files)}):
                     saved = _save_uploaded_files(uploaded_files, session_workspace["raw_docs"])
                     st.session_state.index_ready = False
                     tracker.add_detail("saved_files", len(saved))
-                    st.success(f"✅ Saved {len(saved)} PDF file(s) to your private session workspace.")
-                except Exception as e:
-                    tracker.end_operation(status=OperationStatus.FAILED, error=e)
-                    st.error(f"❌ Upload failed: {e}")
+                st.success(f"✅ Saved {len(saved)} PDF file(s) to your private session workspace.")
+            except Exception as e:
+                st.error(f"❌ Upload failed: {e}")
 
     # Index building section
     st.subheader(" Document Index")
@@ -309,7 +310,6 @@ with st.sidebar:
                     st.balloons()
 
             except Exception as e:
-                tracker.end_operation(status=OperationStatus.FAILED, error=e)
                 st.error(f"❌ Error building index: {str(e)}")
                 st.session_state.index_ready = False
 
@@ -393,8 +393,7 @@ with st.sidebar:
                     # Details
                     if op['details']:
                         st.caption("**Details:**")
-                        for key, value in op['details'].items():
-                            st.text(f"  {key}: {value}")
+                        st.json(op['details'])
                     
                     # Warnings
                     if op['warning_messages']:
@@ -578,7 +577,6 @@ if search_button and query:
                         st.code(result['citations'], language="text")
 
             except Exception as e:
-                tracker.end_operation(status=OperationStatus.FAILED, error=e)
                 st.error(f"❌ Error processing query: {str(e)}")
                 import traceback
                 st.error(traceback.format_exc())

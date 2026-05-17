@@ -7,6 +7,9 @@ import io
 from PIL import Image
 import pytesseract
 
+# Handle headless environments
+Image.LOAD_TRUNCATED_IMAGES = True
+
 def extract_text_from_pdf(pdf_path: Path) -> List[Dict]:
     """
     Extracts text page-wise from PDF and returns list of dicts:
@@ -57,8 +60,9 @@ def extract_images_from_pdf(
                     # Get image from page
                     im = page.within_bbox(img_obj).crop(img_obj).get_image()
                     
-                    # Convert to PIL Image
+                    # Convert to PIL Image - use safe mode
                     img = Image.open(io.BytesIO(im.tobytes()))
+                    img = img.convert("RGB")
                     
                     # Save image file
                     img_filename = f"{pdf_path.stem}_p{page_num}_img{img_idx}.png"
@@ -72,7 +76,7 @@ def extract_images_from_pdf(
                             ocr_text = pytesseract.image_to_string(img)
                             ocr_text = ocr_text.strip()
                         except Exception as e:
-                            print(f"OCR failed for {img_filename}: {e}")
+                            print(f"⚠ OCR failed for {img_filename}: {e}")
                     
                     image_chunks.append({
                         "page": page_num,
@@ -85,7 +89,7 @@ def extract_images_from_pdf(
                     })
                     
                 except Exception as e:
-                    print(f"Error processing image {img_idx} on page {page_num}: {e}")
+                    print(f"⚠ Error processing image {img_idx} on page {page_num}: {e}")
                     continue
     
     return image_chunks

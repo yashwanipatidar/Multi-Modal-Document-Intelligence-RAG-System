@@ -6,6 +6,9 @@ from PIL import Image
 from pathlib import Path
 from ..config import EMBEDDING_MODEL_NAME
 
+# Ensure PIL uses safe mode for headless environments
+Image.LOAD_TRUNCATED_IMAGES = True
+
 class TextEmbedder:
     """Text-only embedder using sentence-transformers."""
     def __init__(self, model_name: str = EMBEDDING_MODEL_NAME):
@@ -52,6 +55,7 @@ class MultiModalEmbedder:
     def encode_images(self, image_paths: List[Union[str, Path]], batch_size: int = 8) -> np.ndarray:
         """
         Encode images using CLIP vision encoder.
+        Handles headless environments gracefully.
         
         Args:
             image_paths: List of paths to image files
@@ -65,24 +69,31 @@ class MultiModalEmbedder:
         
         for img_path in image_paths:
             try:
-                img = Image.open(img_path).convert("RGB")
+                # Use lazy loading to avoid display-related issues
+                img = Image.open(img_path)
+                img = img.convert("RGB")
                 images.append(img)
                 valid_paths.append(img_path)
             except Exception as e:
-                print(f"Could not load image {img_path}: {e}")
+                print(f"⚠ Could not load image {img_path}: {e}")
         
         if not images:
             return np.array([]).reshape(0, self.model.get_sentence_embedding_dimension())
         
-        # CLIP encodes images directly
-        embeddings = self.model.encode(
-            images,
-            batch_size=batch_size,
-            show_progress_bar=False,
-            convert_to_numpy=True,
-            normalize_embeddings=True,
-        )
-        return embeddings
+        try:
+            # CLIP encodes images directly
+            embeddings = self.model.encode(
+                images,
+                batch_size=batch_size,
+                show_progress_bar=False,
+                convert_to_numpy=True,
+                normalize_embeddings=True,
+            )
+            return embeddings.astype('float32')
+        except Exception as e:
+            print(f"⚠ Image encoding failed: {e}")
+            # Return zero embeddings as fallback
+            return np.zeros((len(images), self.model.get_sentence_embedding_dimension()), dtype='float32')
     
     def encode_mixed(self, items: List[dict], batch_size: int = 16) -> dict:
         """

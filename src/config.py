@@ -4,6 +4,14 @@ import os
 from pathlib import Path
 from dotenv import load_dotenv
 
+# ===== HEADLESS/GPU CONFIGURATION (MUST BE FIRST) =====
+# Disable OpenGL for headless environments (Docker, Linux servers, WSL)
+os.environ['DISPLAY'] = ''
+os.environ['LIBGL_ALWAYS_INDIRECT'] = '1'
+os.environ['CUDA_VISIBLE_DEVICES'] = '-1'  # Force CPU-only mode
+os.environ['TOKENIZERS_PARALLELISM'] = 'false'
+# ======================================================
+
 # Load env file
 load_dotenv()
 

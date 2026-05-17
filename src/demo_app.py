@@ -10,6 +10,7 @@ import time
 from pathlib import Path
 from typing import List, Dict
 import sys
+import uuid
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
@@ -18,7 +19,13 @@ import plotly.graph_objects as go
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.retriever.rag_pipeline import answer_query, answer_query_grouped_by_modality
-from src.config import RAW_DOCS_DIR, PROCESSED_DIR
+from src.config import PROCESSED_DIR
+from src.indexing.multi_modal_store import MultiModalVectorStore
+
+
+MAX_UPLOAD_MB = 25
+MAX_FILES_PER_SESSION = 10
+SESSIONS_ROOT = PROCESSED_DIR / "sessions"
 
 
 # ==================== PAGE CONFIG ====================
@@ -116,9 +123,105 @@ def visualize_table(table_path: Path, table_name: str):
         st.text("Table file may be missing or corrupted")
 
 
+def _get_session_id() -> str:
+    """Return a stable session id for the current browser session."""
+    if "session_id" not in st.session_state:
+        st.session_state.session_id = uuid.uuid4().hex
+    return st.session_state.session_id
+
+
+def _get_session_workspace() -> Dict[str, Path]:
+    """Create and return per-session directories."""
+    session_id = _get_session_id()
+    root = SESSIONS_ROOT / session_id
+    raw_dir = root / "raw_docs"
+    tables_dir = root / "processed" / "tables"
+    images_dir = root / "processed" / "images"
+    index_dir = root / "index"
+
+    for path in [raw_dir, tables_dir, images_dir, index_dir]:
+        path.mkdir(parents=True, exist_ok=True)
+
+    return {
+        "root": root,
+        "raw_docs": raw_dir,
+        "tables": tables_dir,
+        "images": images_dir,
+        "index": index_dir,
+    }
+
+
+def _session_index_paths(workspace: Dict[str, Path]) -> Dict[str, Path]:
+    """Resolve index files used by the current session."""
+    return {
+        "faiss": workspace["index"] / "multi_modal_faiss.index",
+        "metadata": workspace["index"] / "multi_modal_metadata.pkl",
+    }
+
+
+def _save_uploaded_files(uploaded_files, raw_docs_dir: Path) -> List[Path]:
+    """Validate and persist uploaded PDF files for this session."""
+    if len(uploaded_files) > MAX_FILES_PER_SESSION:
+        raise ValueError(f"Please upload up to {MAX_FILES_PER_SESSION} files per session.")
+
+    # Replace files for deterministic indexing in this session
+    for existing_pdf in raw_docs_dir.glob("*.pdf"):
+        existing_pdf.unlink(missing_ok=True)
+
+    saved_paths: List[Path] = []
+    for upload in uploaded_files:
+        if not upload.name.lower().endswith(".pdf"):
+            raise ValueError(f"Unsupported file type: {upload.name}")
+
+        file_size_mb = len(upload.getvalue()) / (1024 * 1024)
+        if file_size_mb > MAX_UPLOAD_MB:
+            raise ValueError(f"{upload.name} exceeds {MAX_UPLOAD_MB} MB")
+
+        destination = raw_docs_dir / Path(upload.name).name
+        destination.write_bytes(upload.getvalue())
+        saved_paths.append(destination)
+
+    return saved_paths
+
+
+def _get_session_store(workspace: Dict[str, Path]) -> MultiModalVectorStore:
+    """Instantiate and load session-specific vector store."""
+    index_paths = _session_index_paths(workspace)
+    store = MultiModalVectorStore(
+        index_path=index_paths["faiss"],
+        metadata_path=index_paths["metadata"],
+    )
+    store.load_index()
+    return store
+
+
 # ==================== SIDEBAR ====================
 with st.sidebar:
+    session_workspace = _get_session_workspace()
+    session_index_paths = _session_index_paths(session_workspace)
+
     st.title(" Configuration")
+    st.caption(f"Session: {st.session_state.session_id[:8]}")
+
+    # Upload section
+    st.subheader(" Upload PDFs")
+    uploaded_files = st.file_uploader(
+        "Add one or more PDF files",
+        type=["pdf"],
+        accept_multiple_files=True,
+        help=f"Max {MAX_FILES_PER_SESSION} files, {MAX_UPLOAD_MB} MB each",
+    )
+
+    if st.button(" Save Uploaded PDFs", use_container_width=True):
+        if not uploaded_files:
+            st.warning("Please select at least one PDF file.")
+        else:
+            try:
+                saved = _save_uploaded_files(uploaded_files, session_workspace["raw_docs"])
+                st.session_state.index_ready = False
+                st.success(f"Saved {len(saved)} PDF file(s) to your private session workspace.")
+            except Exception as e:
+                st.error(f"Upload failed: {e}")
 
     # Index building section
     st.subheader(" Document Index")
@@ -126,27 +229,45 @@ with st.sidebar:
     if st.button(" Build/Rebuild Index", use_container_width=True):
         with st.spinner("Building index... This may take a moment..."):
             try:
-                from src.ingestion.pdf_text_extractor import ingest_all_pdfs
+                from src.ingestion.pdf_text_extractor import ingest_pdf_paths
                 from src.indexing.multi_modal_store import build_multi_modal_index
-                from src.ingestion.pdf_table_extractor import extract_all_tables
+                from src.ingestion.pdf_table_extractor import extract_tables_from_paths
 
-                # Step 1: Ingest PDFs
-                st.status("Step 1: Extracting text and images from PDFs...")
-                chunks = ingest_all_pdfs(include_images=True, ocr_enabled=True)
-                st.success(f" {len(chunks)} chunks extracted")
+                pdf_paths = list(session_workspace["raw_docs"].glob("*.pdf"))
+                if not pdf_paths:
+                    st.warning("Please upload and save PDFs first.")
+                    st.session_state.index_ready = False
+                else:
+                    # Step 1: Ingest PDFs
+                    st.status("Step 1: Extracting text and images from PDFs...")
+                    chunks = ingest_pdf_paths(
+                        pdf_paths=pdf_paths,
+                        include_images=True,
+                        ocr_enabled=True,
+                        image_output_dir=session_workspace["images"],
+                    )
+                    st.success(f" {len(chunks)} chunks extracted")
 
-                # Step 2: Extract tables
-                st.status("Step 2: Extracting tables...")
-                table_files = extract_all_tables()
-                st.success(f" {len(table_files)} tables found")
+                    # Step 2: Extract tables
+                    st.status("Step 2: Extracting tables...")
+                    table_files = extract_tables_from_paths(
+                        pdf_paths=pdf_paths,
+                        output_dir=session_workspace["tables"],
+                    )
+                    st.success(f" {len(table_files)} tables found")
 
-                # Step 3: Build multi-modal index
-                st.status("Step 3: Building multi-modal index...")
-                store = build_multi_modal_index(chunks, table_files)
-                st.success(" Index built successfully!")
+                    # Step 3: Build multi-modal index
+                    st.status("Step 3: Building multi-modal index...")
+                    build_multi_modal_index(
+                        chunks,
+                        table_files,
+                        index_path=session_index_paths["faiss"],
+                        metadata_path=session_index_paths["metadata"],
+                    )
+                    st.success(" Index built successfully!")
 
-                st.session_state.index_ready = True
-                st.balloons()
+                    st.session_state.index_ready = True
+                    st.balloons()
 
             except Exception as e:
                 st.error(f" Error building index: {str(e)}")
@@ -181,11 +302,10 @@ with st.sidebar:
 
     # Document info
     st.subheader(" Document Status")
-    pdf_count = len(list(RAW_DOCS_DIR.glob("*.pdf")))
-    table_dir = PROCESSED_DIR / "tables"
-    table_count = len(list(table_dir.glob("*.csv"))) if table_dir.exists() else 0
-    image_dir = PROCESSED_DIR / "images"
-    image_count = len(list(image_dir.glob("*.png"))) if image_dir.exists() else 0
+    pdf_count = len(list(session_workspace["raw_docs"].glob("*.pdf")))
+    table_count = len(list(session_workspace["tables"].glob("*.csv")))
+    image_count = len(list(session_workspace["images"].glob("*.png")))
+    index_ready = session_index_paths["faiss"].exists() and session_index_paths["metadata"].exists()
 
     col1, col2 = st.columns(2)
     with col1:
@@ -197,7 +317,7 @@ with st.sidebar:
     with col3:
         st.metric(" Images", image_count)
     with col4:
-        st.metric(" Chunks", "N/A")
+        st.metric(" Index", "Ready" if index_ready else "Not ready")
 
 
 # ==================== MAIN CONTENT ====================
@@ -225,12 +345,22 @@ with col2:
 # ==================== RESULTS DISPLAY ====================
 if search_button and query:
     if pdf_count == 0:
-        st.warning("⚠️ No PDFs found. Please add documents to `data/raw_docs/` and build an index.")
+        st.warning("⚠️ No uploaded PDFs found for this session. Upload and save PDFs first.")
+    elif not index_ready:
+        st.warning("⚠️ Index is not ready for this session. Click 'Build/Rebuild Index' first.")
     else:
         with st.spinner("Searching and generating answer..."):
             try:
+                session_store = _get_session_store(session_workspace)
+
                 if retrieval_mode == "Unified":
-                    result = answer_query(query, top_k=top_k, use_multi_modal=True)
+                    result = answer_query(
+                        query,
+                        top_k=top_k,
+                        use_multi_modal=True,
+                        temperature=temperature,
+                        store=session_store,
+                    )
                     # Display answer
                     st.markdown("### 📝 Answer")
                     with st.container():
@@ -259,10 +389,11 @@ if search_button and query:
 
                             # If it's a table, try to visualize it
                             if item['modality'] == 'table':
-                                table_filename = item['source'].split('/')[-1] if '/' in item['source'] else item['source']
-                                table_path = PROCESSED_DIR / "tables" / table_filename
+                                table_path_str = item.get("metadata", {}).get("path")
+                                table_path = Path(table_path_str) if table_path_str else None
+                                table_filename = table_path.name if table_path else item['source']
 
-                                if table_path.exists():
+                                if table_path and table_path.exists():
                                     visualize_table(table_path, table_filename)
                                 else:
                                     st.markdown("**Content Preview:**")
@@ -276,7 +407,12 @@ if search_button and query:
                         st.markdown(result['context'])
 
                 else:  # By Modality
-                    result = answer_query_grouped_by_modality(query, top_k=top_k)
+                    result = answer_query_grouped_by_modality(
+                        query,
+                        top_k=top_k,
+                        temperature=temperature,
+                        store=session_store,
+                    )
 
                     # Display answer
                     st.markdown("### 📝 Answer")
@@ -327,10 +463,11 @@ if search_button and query:
                                     st.caption(f"**Modality:** table  |  **Score:** {item['score']:.4f}")
 
                                     # Try to visualize the table
-                                    table_filename = item['source'].split('/')[-1] if '/' in item['source'] else item['source']
-                                    table_path = PROCESSED_DIR / "tables" / table_filename
+                                    table_path_str = item.get("metadata", {}).get("path")
+                                    table_path = Path(table_path_str) if table_path_str else None
+                                    table_filename = table_path.name if table_path else item['source']
 
-                                    if table_path.exists():
+                                    if table_path and table_path.exists():
                                         visualize_table(table_path, table_filename)
                                     else:
                                         # Fallback to text preview

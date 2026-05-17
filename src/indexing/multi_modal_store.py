@@ -4,7 +4,7 @@ Unified multi-modal vector store combining text, images, and tables.
 Provides retrieval across all modalities with proper source attribution.
 """
 
-from typing import List, Dict, Tuple
+from typing import List, Dict, Optional
 import numpy as np
 import faiss
 import pickle
@@ -12,8 +12,6 @@ from pathlib import Path
 
 from ..config import INDEX_DIR
 from .embeddings import MultiModalEmbedder
-from .table_indexer import build_table_index, load_table_index
-from .vector_store import build_text_index as build_text_index_legacy
 
 
 # Index file paths
@@ -24,11 +22,18 @@ MULTI_MODAL_METADATA = INDEX_DIR / "multi_modal_metadata.pkl"
 class MultiModalVectorStore:
     """Unified vector store for multi-modal retrieval."""
     
-    def __init__(self, embedder_model: str = "sentence-transformers/clip-ViT-B-32"):
+    def __init__(
+        self,
+        embedder_model: str = "sentence-transformers/clip-ViT-B-32",
+        index_path: Optional[Path] = None,
+        metadata_path: Optional[Path] = None,
+    ):
         """Initialize the multi-modal vector store."""
         self.embedder = MultiModalEmbedder(embedder_model)
         self.index = None
         self.metadata = None
+        self.index_path = index_path or MULTI_MODAL_FAISS
+        self.metadata_path = metadata_path or MULTI_MODAL_METADATA
     
     def build_index(self, chunks: List[Dict], table_paths: List[Path] = None) -> None:
         """
@@ -122,8 +127,11 @@ class MultiModalVectorStore:
         index.add(embeddings_array)
         
         # Save index and metadata
-        faiss.write_index(index, str(MULTI_MODAL_FAISS))
-        with open(MULTI_MODAL_METADATA, "wb") as f:
+        self.index_path.parent.mkdir(parents=True, exist_ok=True)
+        self.metadata_path.parent.mkdir(parents=True, exist_ok=True)
+
+        faiss.write_index(index, str(self.index_path))
+        with open(self.metadata_path, "wb") as f:
             pickle.dump(all_metadata, f)
         
         self.index = index
@@ -135,15 +143,15 @@ class MultiModalVectorStore:
         print(f"   - Images: {sum(1 for m in all_metadata if m['type'] == 'image')}")
         print(f"   - Tables: {sum(1 for m in all_metadata if m['type'] == 'table')}")
         print(f"   Embedding dimension: {dim}")
-        print(f"   Saved to: {MULTI_MODAL_FAISS}")
+        print(f"   Saved to: {self.index_path}")
     
     def load_index(self) -> None:
         """Load existing FAISS index and metadata."""
-        if not MULTI_MODAL_FAISS.exists() or not MULTI_MODAL_METADATA.exists():
+        if not self.index_path.exists() or not self.metadata_path.exists():
             raise FileNotFoundError("Multi-modal index not found. Build it first.")
         
-        self.index = faiss.read_index(str(MULTI_MODAL_FAISS))
-        with open(MULTI_MODAL_METADATA, "rb") as f:
+        self.index = faiss.read_index(str(self.index_path))
+        with open(self.metadata_path, "rb") as f:
             self.metadata = pickle.load(f)
         
         print(f" Loaded multi-modal index with {len(self.metadata)} items")
@@ -223,7 +231,9 @@ class MultiModalVectorStore:
 # ==================== CONVENIENCE FUNCTIONS ====================
 
 def build_multi_modal_index(chunks: List[Dict], table_paths: List[Path] = None,
-                            embedder_model: str = "sentence-transformers/clip-ViT-B-32") -> MultiModalVectorStore:
+                            embedder_model: str = "sentence-transformers/clip-ViT-B-32",
+                            index_path: Optional[Path] = None,
+                            metadata_path: Optional[Path] = None) -> MultiModalVectorStore:
     """
     Build a multi-modal index from chunks and tables.
     
@@ -235,7 +245,11 @@ def build_multi_modal_index(chunks: List[Dict], table_paths: List[Path] = None,
     Returns:
         MultiModalVectorStore instance
     """
-    store = MultiModalVectorStore(embedder_model)
+    store = MultiModalVectorStore(
+        embedder_model=embedder_model,
+        index_path=index_path,
+        metadata_path=metadata_path,
+    )
     store.build_index(chunks, table_paths)
     return store
 

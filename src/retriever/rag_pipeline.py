@@ -36,6 +36,7 @@ def _call_groq_chat_completion(
     *,
     system_prompt: str,
     user_message: str,
+    temperature: float = 0.1,
     max_retries: int = 3,
     base_delay: float = 1.5,
     max_delay: float = 8.0,
@@ -51,7 +52,7 @@ def _call_groq_chat_completion(
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_message},
                 ],
-                temperature=0.1,
+                temperature=temperature,
                 max_tokens=500,
             )
             return response.choices[0].message.content, attempt
@@ -146,7 +147,37 @@ def create_citations_summary(results: List[Dict]) -> str:
     return "\n".join(citations)
 
 
-def answer_query(query: str, top_k: int = 5, use_multi_modal: bool = True) -> Dict:
+def _normalize_text_only_results(results: List[Dict]) -> List[Dict]:
+    """Normalize legacy text-only search results to the multi-modal result shape."""
+    normalized = []
+
+    for item in results:
+        meta = item.get("metadata", {}) or {}
+        text_content = item.get("text", "")
+        normalized.append(
+            {
+                "score": float(item.get("score", 0.0)),
+                "content": text_content,
+                "source": meta.get("source", "unknown"),
+                "page": meta.get("page", -1),
+                "type": "text",
+                "modality": "text",
+                "full_content": text_content,
+                "image_path": None,
+                "metadata": meta,
+            }
+        )
+
+    return normalized
+
+
+def answer_query(
+    query: str,
+    top_k: int = 5,
+    use_multi_modal: bool = True,
+    temperature: float = 0.1,
+    store: Optional[MultiModalVectorStore] = None,
+) -> Dict:
     """
     Generate answer from multi-modal retrieval results.
 
@@ -171,16 +202,17 @@ def answer_query(query: str, top_k: int = 5, use_multi_modal: bool = True) -> Di
     # ==================== RETRIEVAL ====================
     if use_multi_modal:
         try:
-            store = MultiModalVectorStore()
-            store.load_index()
-            retrieved = store.search(query, top_k=top_k)
+            active_store = store or MultiModalVectorStore()
+            if active_store.index is None or active_store.metadata is None:
+                active_store.load_index()
+            retrieved = active_store.search(query, top_k=top_k)
         except FileNotFoundError:
             print("⚠ Multi-modal index not found. Falling back to text-only retrieval...")
             from ..indexing.vector_store import search_text_index
-            retrieved = search_text_index(query, top_k=top_k)
+            retrieved = _normalize_text_only_results(search_text_index(query, top_k=top_k))
     else:
         from ..indexing.vector_store import search_text_index
-        retrieved = search_text_index(query, top_k=top_k)
+        retrieved = _normalize_text_only_results(search_text_index(query, top_k=top_k))
 
     retrieval_time = time.time() - retrieval_start
 
@@ -226,6 +258,7 @@ ANSWER (cite using [1], [2], etc. format):"""
     answer_text, llm_attempts = _call_groq_chat_completion(
         system_prompt=system_prompt,
         user_message=user_message,
+        temperature=temperature,
     )
 
     # ==================== RETURN RESULT ====================
@@ -242,7 +275,12 @@ ANSWER (cite using [1], [2], etc. format):"""
     }
 
 
-def answer_query_grouped_by_modality(query: str, top_k: int = 3) -> Dict:
+def answer_query_grouped_by_modality(
+    query: str,
+    top_k: int = 3,
+    temperature: float = 0.1,
+    store: Optional[MultiModalVectorStore] = None,
+) -> Dict:
     """
     Answer query with separate retrieval for each modality.
     Useful for understanding which modalities contributed to the answer.
@@ -267,9 +305,10 @@ def answer_query_grouped_by_modality(query: str, top_k: int = 3) -> Dict:
     retrieval_start = time.time()
 
     try:
-        store = MultiModalVectorStore()
-        store.load_index()
-        results_by_modality = store.search_by_modality(query, top_k=top_k)
+        active_store = store or MultiModalVectorStore()
+        if active_store.index is None or active_store.metadata is None:
+            active_store.load_index()
+        results_by_modality = active_store.search_by_modality(query, top_k=top_k)
     except FileNotFoundError:
         print("⚠ Multi-modal index not found.")
         return {"answer": "Index not found", "retrieved_by_modality": {}}
@@ -303,6 +342,7 @@ Answer (use [1], [2], etc. for citations):"""
     answer_text, llm_attempts = _call_groq_chat_completion(
         system_prompt=system_prompt,
         user_message=user_message,
+        temperature=temperature,
     )
 
     return {

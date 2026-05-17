@@ -29,7 +29,7 @@ requests==2.31.0
 # Development (optional)
 jupyter==1.0.0
 ipython==8.15.0
-opencv-python
+opencv-python-headless
 
 
 

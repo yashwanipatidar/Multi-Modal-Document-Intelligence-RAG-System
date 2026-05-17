@@ -14,6 +14,8 @@ import uuid
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
+import json
+from datetime import datetime
 
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -21,11 +23,13 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from src.retriever.rag_pipeline import answer_query, answer_query_grouped_by_modality
 from src.config import PROCESSED_DIR
 from src.indexing.multi_modal_store import MultiModalVectorStore
+from src.operation_tracker import get_operation_tracker, OperationStatus, OperationTimer
 
 
 MAX_UPLOAD_MB = 25
 MAX_FILES_PER_SESSION = 10
 SESSIONS_ROOT = PROCESSED_DIR / "sessions"
+LOG_DIR = PROCESSED_DIR / "session_logs"
 
 
 # ==================== PAGE CONFIG ====================
@@ -62,6 +66,16 @@ st.markdown("""
 
 
 # ==================== HELPER FUNCTIONS ====================
+def _get_or_create_tracker():
+    """Get or create operation tracker for current session"""
+    if "tracker" not in st.session_state:
+        st.session_state.tracker = get_operation_tracker(
+            st.session_state.session_id,
+            log_dir=LOG_DIR
+        )
+    return st.session_state.tracker
+
+
 def visualize_table(table_path: Path, table_name: str):
     """Display table as formatted DataFrame with optional visualizations."""
     try:
@@ -127,6 +141,11 @@ def _get_session_id() -> str:
     """Return a stable session id for the current browser session."""
     if "session_id" not in st.session_state:
         st.session_state.session_id = uuid.uuid4().hex
+        # Initialize tracker when session is created
+        st.session_state.tracker = get_operation_tracker(
+            st.session_state.session_id,
+            log_dir=LOG_DIR
+        )
     return st.session_state.session_id
 
 
@@ -161,6 +180,8 @@ def _session_index_paths(workspace: Dict[str, Path]) -> Dict[str, Path]:
 
 def _save_uploaded_files(uploaded_files, raw_docs_dir: Path) -> List[Path]:
     """Validate and persist uploaded PDF files for this session."""
+    tracker = _get_or_create_tracker()
+    
     if len(uploaded_files) > MAX_FILES_PER_SESSION:
         raise ValueError(f"Please upload up to {MAX_FILES_PER_SESSION} files per session.")
 
@@ -180,6 +201,13 @@ def _save_uploaded_files(uploaded_files, raw_docs_dir: Path) -> List[Path]:
         destination = raw_docs_dir / Path(upload.name).name
         destination.write_bytes(upload.getvalue())
         saved_paths.append(destination)
+        
+        # Track each file upload
+        tracker.add_detail(f"file_{upload.name}", {
+            "size_mb": round(file_size_mb, 2),
+            "path": str(destination),
+            "status": "saved"
+        })
 
     return saved_paths
 
@@ -216,18 +244,23 @@ with st.sidebar:
         if not uploaded_files:
             st.warning("Please select at least one PDF file.")
         else:
-            try:
-                saved = _save_uploaded_files(uploaded_files, session_workspace["raw_docs"])
-                st.session_state.index_ready = False
-                st.success(f"Saved {len(saved)} PDF file(s) to your private session workspace.")
-            except Exception as e:
-                st.error(f"Upload failed: {e}")
+            tracker = _get_or_create_tracker()
+            with OperationTimer(tracker, "PDF Upload", {"file_count": len(uploaded_files)}):
+                try:
+                    saved = _save_uploaded_files(uploaded_files, session_workspace["raw_docs"])
+                    st.session_state.index_ready = False
+                    tracker.add_detail("saved_files", len(saved))
+                    st.success(f"✅ Saved {len(saved)} PDF file(s) to your private session workspace.")
+                except Exception as e:
+                    tracker.end_operation(status=OperationStatus.FAILED, error=e)
+                    st.error(f"❌ Upload failed: {e}")
 
     # Index building section
     st.subheader(" Document Index")
 
     if st.button(" Build/Rebuild Index", use_container_width=True):
         with st.spinner("Building index... This may take a moment..."):
+            tracker = _get_or_create_tracker()
             try:
                 from src.ingestion.pdf_text_extractor import ingest_pdf_paths
                 from src.indexing.multi_modal_store import build_multi_modal_index
@@ -240,37 +273,44 @@ with st.sidebar:
                 else:
                     # Step 1: Ingest PDFs
                     st.status("Step 1: Extracting text and images from PDFs...")
-                    chunks = ingest_pdf_paths(
-                        pdf_paths=pdf_paths,
-                        include_images=True,
-                        ocr_enabled=True,
-                        image_output_dir=session_workspace["images"],
-                    )
-                    st.success(f" {len(chunks)} chunks extracted")
+                    with OperationTimer(tracker, "PDF Text & Image Extraction", {"pdf_count": len(pdf_paths)}):
+                        chunks = ingest_pdf_paths(
+                            pdf_paths=pdf_paths,
+                            include_images=True,
+                            ocr_enabled=True,
+                            image_output_dir=session_workspace["images"],
+                        )
+                        tracker.add_detail("chunks_extracted", len(chunks))
+                    st.success(f"✅ {len(chunks)} chunks extracted")
 
                     # Step 2: Extract tables
                     st.status("Step 2: Extracting tables...")
-                    table_files = extract_tables_from_paths(
-                        pdf_paths=pdf_paths,
-                        output_dir=session_workspace["tables"],
-                    )
-                    st.success(f" {len(table_files)} tables found")
+                    with OperationTimer(tracker, "Table Extraction", {"pdf_count": len(pdf_paths)}):
+                        table_files = extract_tables_from_paths(
+                            pdf_paths=pdf_paths,
+                            output_dir=session_workspace["tables"],
+                        )
+                        tracker.add_detail("tables_extracted", len(table_files))
+                    st.success(f"✅ {len(table_files)} tables found")
 
                     # Step 3: Build multi-modal index
                     st.status("Step 3: Building multi-modal index...")
-                    build_multi_modal_index(
-                        chunks,
-                        table_files,
-                        index_path=session_index_paths["faiss"],
-                        metadata_path=session_index_paths["metadata"],
-                    )
-                    st.success(" Index built successfully!")
+                    with OperationTimer(tracker, "Multi-Modal Index Building", {"chunks": len(chunks), "tables": len(table_files)}):
+                        build_multi_modal_index(
+                            chunks,
+                            table_files,
+                            index_path=session_index_paths["faiss"],
+                            metadata_path=session_index_paths["metadata"],
+                        )
+                        tracker.add_detail("index_file_size_mb", round(session_index_paths["faiss"].stat().st_size / (1024 * 1024), 2))
+                    st.success("✅ Index built successfully!")
 
                     st.session_state.index_ready = True
                     st.balloons()
 
             except Exception as e:
-                st.error(f" Error building index: {str(e)}")
+                tracker.end_operation(status=OperationStatus.FAILED, error=e)
+                st.error(f"❌ Error building index: {str(e)}")
                 st.session_state.index_ready = False
 
     # Retrieval settings
@@ -319,6 +359,51 @@ with st.sidebar:
     with col4:
         st.metric(" Index", "Ready" if index_ready else "Not ready")
 
+    st.divider()
+
+    # Operation tracking
+    st.subheader(" Operation Logs")
+    tracker = _get_or_create_tracker()
+    summary = tracker.get_operations_summary()
+    
+    if summary["total_operations"] > 0:
+        # Summary metrics
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Total Ops", summary["total_operations"])
+        with col2:
+            st.metric("Success Rate", f"{summary['success_rate']:.0f}%")
+        with col3:
+            st.metric("Total Time", f"{summary['total_duration']:.1f}s")
+        
+        # Detailed logs
+        if st.checkbox("📋 Show Detailed Logs"):
+            operations = tracker.get_operation_details()
+            for op in reversed(operations[-10:]):  # Show last 10 operations
+                with st.expander(f"[{op['status'].upper()}] {op['operation_name']} ({op['duration_seconds']:.2f}s)"):
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        st.caption(f"**Started:** {op['start_time']}")
+                        st.caption(f"**Duration:** {op['duration_seconds']:.2f}s")
+                    with col2:
+                        st.caption(f"**Status:** {op['status']}")
+                        if op['error_message']:
+                            st.error(f"Error: {op['error_message']}")
+                    
+                    # Details
+                    if op['details']:
+                        st.caption("**Details:**")
+                        for key, value in op['details'].items():
+                            st.text(f"  {key}: {value}")
+                    
+                    # Warnings
+                    if op['warning_messages']:
+                        st.caption("**Warnings:**")
+                        for warning in op['warning_messages']:
+                            st.warning(warning)
+    else:
+        st.info("No operations logged yet")
+
 
 # ==================== MAIN CONTENT ====================
 st.title(" Multi-Modal Document Intelligence System")
@@ -350,17 +435,21 @@ if search_button and query:
         st.warning("⚠️ Index is not ready for this session. Click 'Build/Rebuild Index' first.")
     else:
         with st.spinner("Searching and generating answer..."):
+            tracker = _get_or_create_tracker()
             try:
                 session_store = _get_session_store(session_workspace)
 
                 if retrieval_mode == "Unified":
-                    result = answer_query(
-                        query,
-                        top_k=top_k,
-                        use_multi_modal=True,
-                        temperature=temperature,
-                        store=session_store,
-                    )
+                    with OperationTimer(tracker, "Query Retrieval (Unified)", {"query": query[:100], "top_k": top_k}):
+                        result = answer_query(
+                            query,
+                            top_k=top_k,
+                            use_multi_modal=True,
+                            temperature=temperature,
+                            store=session_store,
+                        )
+                        tracker.add_detail("results_found", len(result.get('retrieved', [])))
+                        tracker.add_detail("retrieval_time_seconds", result.get('retrieval_time', 0))
                     # Display answer
                     st.markdown("### 📝 Answer")
                     with st.container():
@@ -407,12 +496,16 @@ if search_button and query:
                         st.markdown(result['context'])
 
                 else:  # By Modality
-                    result = answer_query_grouped_by_modality(
-                        query,
-                        top_k=top_k,
-                        temperature=temperature,
-                        store=session_store,
-                    )
+                    with OperationTimer(tracker, "Query Retrieval (By Modality)", {"query": query[:100], "top_k": top_k}):
+                        result = answer_query_grouped_by_modality(
+                            query,
+                            top_k=top_k,
+                            temperature=temperature,
+                            store=session_store,
+                        )
+                        total_results = sum(len(r) for r in result['retrieved_by_modality'].values())
+                        tracker.add_detail("results_found", total_results)
+                        tracker.add_detail("retrieval_time_seconds", result.get('retrieval_time', 0))
 
                     # Display answer
                     st.markdown("### 📝 Answer")
@@ -485,6 +578,7 @@ if search_button and query:
                         st.code(result['citations'], language="text")
 
             except Exception as e:
+                tracker.end_operation(status=OperationStatus.FAILED, error=e)
                 st.error(f"❌ Error processing query: {str(e)}")
                 import traceback
                 st.error(traceback.format_exc())

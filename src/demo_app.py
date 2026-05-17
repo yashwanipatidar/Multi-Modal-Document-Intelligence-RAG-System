@@ -10,6 +10,8 @@ from pathlib import Path
 from typing import List, Dict
 import sys
 import uuid
+import logging
+import warnings
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
@@ -17,10 +19,15 @@ import plotly.graph_objects as go
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.retriever.rag_pipeline import answer_query, answer_query_grouped_by_modality
 from src.config import PROCESSED_DIR
 from src.indexing.multi_modal_store import MultiModalVectorStore
 from src.operation_tracker import get_operation_tracker, OperationTimer
+from src.retriever.rag_pipeline import answer_query, answer_query_grouped_by_modality
+
+# Keep runtime output focused on app logs rather than library advisory chatter.
+logging.getLogger("transformers").setLevel(logging.ERROR)
+warnings.filterwarnings("ignore", message=r".*Accessing `__path__`.*")
+warnings.filterwarnings("ignore", message=r".*Examining the path of .*raised: No module named 'torchvision'.*")
 
 
 MAX_UPLOAD_MB = 25

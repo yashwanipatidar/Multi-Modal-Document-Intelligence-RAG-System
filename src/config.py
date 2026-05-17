@@ -10,6 +10,9 @@ os.environ['DISPLAY'] = ''
 os.environ['LIBGL_ALWAYS_INDIRECT'] = '1'
 os.environ['CUDA_VISIBLE_DEVICES'] = '-1'  # Force CPU-only mode
 os.environ['TOKENIZERS_PARALLELISM'] = 'false'
+# Reduce noisy runtime logs in Streamlit + Transformers environments
+os.environ.setdefault('STREAMLIT_SERVER_FILE_WATCHER_TYPE', 'none')
+os.environ.setdefault('TRANSFORMERS_NO_ADVISORY_WARNINGS', '1')
 # ======================================================
 
 # Load env file

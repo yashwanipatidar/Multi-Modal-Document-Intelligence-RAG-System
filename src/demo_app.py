@@ -456,10 +456,27 @@ if search_button and query:
                         )
                         tracker.add_detail("results_found", len(result.get('retrieved', [])))
                         tracker.add_detail("retrieval_time_seconds", result.get('retrieval_time', 0))
-                    # Display answer
+                    # Display answer (formatted)
                     st.markdown("### 📝 Answer")
-                    with st.container():
-                        st.markdown(result['answer'])
+                    # Build a short bullet summary from the LLM answer
+                    answer_text = result.get('answer', '')
+                    # Heuristic: use first paragraph as summary and split into sentences
+                    first_para = answer_text.split('\n\n')[0] if answer_text else ''
+                    sentences = [s.strip() for s in first_para.replace('\n', ' ').split('. ') if s]
+                    bullets = sentences[:3]
+
+                    st.markdown("**Summary (short):**")
+                    for b in bullets:
+                        st.markdown(f"- {b.strip()}{'.' if not b.endswith('.') else ''}")
+
+                    # Highlighted insight (first sentence)
+                    if bullets:
+                        st.markdown("**Key Insight:**")
+                        st.info(bullets[0])
+
+                    # Expandable full answer
+                    with st.expander("Full Answer (click to expand)", expanded=False):
+                        st.markdown(answer_text)
                     # Display metrics
                     col1, col2, col3 = st.columns(3)
                     with col1:
@@ -468,38 +485,40 @@ if search_button and query:
                         st.metric("📍 Sources Used", result['num_results'])
                     with col3:
                         st.metric("🎯 Top Score", f"{result['retrieved'][0]['score']:.3f}" if result['retrieved'] else "N/A")
-                    # Display sources
+                    # Display sources with compact citations and preview snippets
                     st.markdown("### 📚 Sources & Evidence")
-
-                    for i, item in enumerate(result['retrieved'], 1):
-                        with st.expander(f"[{i}] {item['source']} ({item['modality'].upper()})", expanded=i<=2):
+                    for i, item in enumerate(result.get('retrieved', []), 1):
+                        src = Path(item.get('source', 'unknown')).name
+                        title = f"[{i}] {src} ({item.get('modality','').upper()})"
+                        with st.expander(title, expanded=(i <= 2)):
                             col1, col2, col3 = st.columns([1, 1, 2])
                             with col1:
-                                st.caption(f"**Modality:** {item['modality']}")
+                                st.caption(f"**Modality:** {item.get('modality')}")
                             with col2:
-                                if item['page'] > 0:
-                                    st.caption(f"**Page:** {item['page']}")
+                                page = item.get('page', -1)
+                                if page and page > 0:
+                                    st.caption(f"**Page:** {page}")
                             with col3:
-                                st.caption(f"**Score:** {item['score']:.4f}")
+                                st.caption(f"**Score:** {item.get('score', 0.0):.4f}")
 
-                            # If it's a table, try to visualize it
-                            if item['modality'] == 'table':
-                                table_path_str = item.get("metadata", {}).get("path")
+                            # Small snippet preview
+                            preview = item.get('full_content') or item.get('content') or ''
+                            snippet = preview.strip()[:400]
+                            if len(preview.strip()) > 400:
+                                snippet += '...'
+                            st.markdown("**Content Preview:**")
+                            st.code(snippet)
+
+                            # If table, allow visualization
+                            if item.get('modality') == 'table':
+                                table_path_str = item.get('metadata', {}).get('path')
                                 table_path = Path(table_path_str) if table_path_str else None
-                                table_filename = table_path.name if table_path else item['source']
-
                                 if table_path and table_path.exists():
-                                    visualize_table(table_path, table_filename)
-                                else:
-                                    st.markdown("**Content Preview:**")
-                                    st.markdown(f"```\n{item['full_content'][:500]}{'...' if len(item['full_content']) > 500 else ''}\n```")
-                            else:
-                                st.markdown("**Content Preview:**")
-                                st.markdown(f"```\n{item['full_content'][:500]}{'...' if len(item['full_content']) > 500 else ''}\n```")
+                                    visualize_table(table_path, table_path.name)
 
                     # Full context (collapsible)
                     with st.expander("🔍 Full Context Used", expanded=False):
-                        st.markdown(result['context'])
+                        st.markdown(result.get('context', ''))
 
                 else:  # By Modality
                     with OperationTimer(tracker, "Query Retrieval (By Modality)", {"query": query[:100], "top_k": top_k}):
@@ -513,15 +532,28 @@ if search_button and query:
                         tracker.add_detail("results_found", total_results)
                         tracker.add_detail("retrieval_time_seconds", result.get('retrieval_time', 0))
 
-                    # Display answer
+                    # Display answer (formatted)
                     st.markdown("### 📝 Answer")
-                    with st.container():
-                        st.markdown(result['answer'])
+                    answer_text = result.get('answer', '')
+                    first_para = answer_text.split('\n\n')[0] if answer_text else ''
+                    sentences = [s.strip() for s in first_para.replace('\n', ' ').split('. ') if s]
+                    bullets = sentences[:3]
+
+                    st.markdown("**Summary (short):**")
+                    for b in bullets:
+                        st.markdown(f"- {b.strip()}{'.' if not b.endswith('.') else ''}")
+
+                    if bullets:
+                        st.markdown("**Key Insight:**")
+                        st.info(bullets[0])
+
+                    with st.expander("Full Answer (click to expand)", expanded=False):
+                        st.markdown(answer_text)
 
                     # Display metrics
                     col1, col2 = st.columns(2)
                     with col1:
-                        st.metric("⏱️ Retrieval Time", f"{result['retrieval_time']:.2f}s")
+                        st.metric("⏱️ Retrieval Time", f"{result.get('retrieval_time', 0):.2f}s")
                     with col2:
                         total_results = sum(len(r) for r in result['retrieved_by_modality'].values())
                         st.metric("📍 Total Sources", total_results)
@@ -534,44 +566,47 @@ if search_button and query:
                     with tab1:
                         if result['retrieved_by_modality']['text']:
                             for i, item in enumerate(result['retrieved_by_modality']['text'], 1):
-                                with st.expander(f"Text [{i}] {item['source']}", expanded=i==1):
-                                    st.caption(f"Score: {item['score']:.4f}")
-                                    st.markdown(item['full_content'][:800])
+                                src = Path(item.get('source','unknown')).name
+                                with st.expander(f"Text [{i}] {src}", expanded=i==1):
+                                    st.caption(f"Score: {item.get('score',0.0):.4f}")
+                                    snippet = (item.get('full_content') or item.get('content') or '')[:800]
+                                    st.code(snippet)
                         else:
                             st.info("No text results found")
 
                     with tab2:
                         if result['retrieved_by_modality']['image']:
                             for i, item in enumerate(result['retrieved_by_modality']['image'], 1):
-                                with st.expander(f"Image [{i}] {item['source']}", expanded=i==1):
-                                    st.caption(f"Page: {item['page']} | Score: {item['score']:.4f}")
+                                src = Path(item.get('source','unknown')).name
+                                with st.expander(f"Image [{i}] {src}", expanded=i==1):
+                                    st.caption(f"Page: {item.get('page')} | Score: {item.get('score',0.0):.4f}")
                                     if item.get('image_path'):
                                         try:
                                             st.image(item['image_path'], width=400)
                                         except:
                                             st.warning("Could not load image")
                                     st.markdown("**OCR Content:**")
-                                    st.markdown(item['full_content'][:800])
+                                    snippet = (item.get('full_content') or item.get('content') or '')[:800]
+                                    st.code(snippet)
                         else:
                             st.info("No image results found")
 
                     with tab3:
                         if result['retrieved_by_modality']['table']:
                             for i, item in enumerate(result['retrieved_by_modality']['table'], 1):
-                                with st.expander(f"📊 Table [{i}] {item['source']}", expanded=i==1):
-                                    st.caption(f"**Modality:** table  |  **Score:** {item['score']:.4f}")
+                                src = Path(item.get('source','unknown')).name
+                                with st.expander(f"📊 Table [{i}] {src}", expanded=i==1):
+                                    st.caption(f"**Modality:** table  |  **Score:** {item.get('score',0.0):.4f}")
 
                                     # Try to visualize the table
-                                    table_path_str = item.get("metadata", {}).get("path")
+                                    table_path_str = item.get('metadata', {}).get('path')
                                     table_path = Path(table_path_str) if table_path_str else None
-                                    table_filename = table_path.name if table_path else item['source']
-
                                     if table_path and table_path.exists():
-                                        visualize_table(table_path, table_filename)
+                                        visualize_table(table_path, table_path.name)
                                     else:
                                         # Fallback to text preview
-                                        st.markdown("**Content Preview:**")
-                                        st.markdown(item['full_content'][:1000])
+                                        snippet = (item.get('full_content') or item.get('content') or '')[:1000]
+                                        st.code(snippet)
                         else:
                             st.info("No table results found")
 

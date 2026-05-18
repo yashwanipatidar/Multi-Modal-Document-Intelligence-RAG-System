@@ -174,6 +174,22 @@ def _get_session_workspace() -> Dict[str, Path]:
     }
 
 
+def _ensure_chat_history():
+    if 'chat_history' not in st.session_state:
+        # Each turn: {'role': 'user'|'assistant', 'content': str}
+        st.session_state.chat_history = []
+        # Try to load persisted chat history for this session
+        tracker = _get_or_create_tracker()
+        try:
+            persisted = tracker.load_chat_history()
+            if persisted:
+                # Convert persisted entries to minimal role/content dicts
+                st.session_state.chat_history = [ {"role": e.get('role'), "content": e.get('content')} for e in persisted ]
+        except Exception:
+            # Non-fatal if loading fails
+            pass
+
+
 def _session_index_paths(workspace: Dict[str, Path]) -> Dict[str, Path]:
     """Resolve index files used by the current session."""
     return {
@@ -410,6 +426,43 @@ with st.sidebar:
     else:
         st.info("No operations logged yet")
 
+    # Chat persistence controls
+    st.divider()
+    st.subheader(" Chat Controls")
+    persist_sensitive = st.checkbox("Persist sensitive content (store raw text)", value=False)
+
+    col_a, col_b = st.columns(2)
+    with col_a:
+        if st.button("Export Chat", use_container_width=True):
+            # Prepare export content from persisted file or in-memory history
+            chat_file = tracker.log_dir / f"chat_{st.session_state.session_id}.jsonl" if tracker.log_dir else None
+            export_bytes = None
+            if chat_file and chat_file.exists():
+                export_bytes = chat_file.read_bytes()
+            else:
+                # Fallback to in-memory history
+                try:
+                    import json
+                    export_bytes = "\n".join(json.dumps(e, ensure_ascii=False) for e in tracker.chat_history).encode('utf-8')
+                except Exception:
+                    export_bytes = b""
+
+            if export_bytes is not None:
+                st.download_button("Download Chat Log", data=export_bytes, file_name=f"chat_{st.session_state.session_id}.jsonl")
+
+    with col_b:
+        if st.button("Clear Chat", use_container_width=True):
+            # Clear in-memory and persisted chat
+            st.session_state.chat_history = []
+            tracker.chat_history = []
+            try:
+                chat_file = tracker.log_dir / f"chat_{st.session_state.session_id}.jsonl" if tracker.log_dir else None
+                if chat_file and chat_file.exists():
+                    chat_file.unlink()
+                st.success("Chat cleared for this session")
+            except Exception as e:
+                st.error(f"Failed to clear chat file: {e}")
+
 
 # ==================== MAIN CONTENT ====================
 st.title(" Multi-Modal Document Intelligence System")
@@ -425,6 +478,16 @@ st.divider()
 # ==================== QUERY INTERFACE ====================
 col1, col2 = st.columns([3, 1])
 with col1:
+    _ensure_chat_history()
+
+    # Render chat history
+    if st.session_state.chat_history:
+        for turn in st.session_state.chat_history[-20:]:
+            if turn.get('role') == 'user':
+                st.markdown(f"**You:** {turn.get('content')}")
+            else:
+                st.markdown(f"**Assistant:** {turn.get('content')}")
+
     query = st.text_input(
         "❓ Ask a question about your documents:",
         placeholder="e.g., What are the key findings from the report?",
@@ -447,15 +510,36 @@ if search_button and query:
 
                 if retrieval_mode == "Unified":
                     with OperationTimer(tracker, "Query Retrieval (Unified)", {"query": query[:100], "top_k": top_k}):
+                        # Append user turn to session chat history for context
+                        st.session_state.chat_history.append({"role": "user", "content": query})
+                        # Persist chat turn (respect user toggle)
+                        try:
+                            if persist_sensitive:
+                                tracker.add_chat_turn_with_options("user", query, redact=False)
+                            else:
+                                tracker.add_chat_turn_with_options("user", query, redact=True)
+                        except Exception:
+                            tracker.add_chat_turn("user", query)
+
                         result = answer_query(
                             query,
                             top_k=top_k,
                             use_multi_modal=True,
                             temperature=temperature,
                             store=session_store,
+                            chat_history=st.session_state.chat_history,
                         )
                         tracker.add_detail("results_found", len(result.get('retrieved', [])))
                         tracker.add_detail("retrieval_time_seconds", result.get('retrieval_time', 0))
+                    # Append assistant reply to chat history and persist
+                    st.session_state.chat_history.append({"role": "assistant", "content": result.get('answer','')})
+                    try:
+                        if persist_sensitive:
+                            tracker.add_chat_turn_with_options("assistant", result.get('answer',''), redact=False)
+                        else:
+                            tracker.add_chat_turn_with_options("assistant", result.get('answer',''), redact=True)
+                    except Exception:
+                        tracker.add_chat_turn("assistant", result.get('answer',''))
                     # Display answer (formatted)
                     st.markdown("### 📝 Answer")
                     # Build a short bullet summary from the LLM answer
@@ -522,15 +606,32 @@ if search_button and query:
 
                 else:  # By Modality
                     with OperationTimer(tracker, "Query Retrieval (By Modality)", {"query": query[:100], "top_k": top_k}):
+                        st.session_state.chat_history.append({"role": "user", "content": query})
+                        try:
+                            if persist_sensitive:
+                                tracker.add_chat_turn_with_options("user", query, redact=False)
+                            else:
+                                tracker.add_chat_turn_with_options("user", query, redact=True)
+                        except Exception:
+                            tracker.add_chat_turn("user", query)
                         result = answer_query_grouped_by_modality(
                             query,
                             top_k=top_k,
                             temperature=temperature,
                             store=session_store,
+                            chat_history=st.session_state.chat_history,
                         )
                         total_results = sum(len(r) for r in result['retrieved_by_modality'].values())
                         tracker.add_detail("results_found", total_results)
                         tracker.add_detail("retrieval_time_seconds", result.get('retrieval_time', 0))
+                    st.session_state.chat_history.append({"role": "assistant", "content": result.get('answer','')})
+                    try:
+                        if persist_sensitive:
+                            tracker.add_chat_turn_with_options("assistant", result.get('answer',''), redact=False)
+                        else:
+                            tracker.add_chat_turn_with_options("assistant", result.get('answer',''), redact=True)
+                    except Exception:
+                        tracker.add_chat_turn("assistant", result.get('answer',''))
 
                     # Display answer (formatted)
                     st.markdown("### 📝 Answer")

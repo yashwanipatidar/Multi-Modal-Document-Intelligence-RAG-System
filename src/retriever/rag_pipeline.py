@@ -177,6 +177,7 @@ def answer_query(
     use_multi_modal: bool = True,
     temperature: float = 0.1,
     store: Optional[MultiModalVectorStore] = None,
+    chat_history: Optional[List[Dict]] = None,
 ) -> Dict:
     """
     Generate answer from multi-modal retrieval results.
@@ -243,7 +244,24 @@ IMPORTANT INSTRUCTIONS:
 6. When referencing tables, be specific about data points
 7. When referencing images, describe what's shown and cite the image source"""
 
-    user_message = f"""CONTEXT (numbered citations):
+    # Incorporate optional conversation history to provide context for follow-up questions
+    convo_block = ""
+    if chat_history:
+        # Expecting list of {'role': 'user'|'assistant', 'content': str}
+        parts = []
+        for turn in chat_history[-6:]:  # limit to last 6 turns to keep prompt size reasonable
+            role = turn.get('role', 'user')
+            content = turn.get('content', '').strip()
+            if not content:
+                continue
+            if role == 'user':
+                parts.append(f"Q: {content}")
+            else:
+                parts.append(f"A: {content}")
+        if parts:
+            convo_block = "CONVERSATION HISTORY:\n" + "\n".join(parts) + "\n\n"
+
+    user_message = f"""{convo_block}CONTEXT (numbered citations):
 {context}
 
 SOURCES:
@@ -280,6 +298,7 @@ def answer_query_grouped_by_modality(
     top_k: int = 3,
     temperature: float = 0.1,
     store: Optional[MultiModalVectorStore] = None,
+    chat_history: Optional[List[Dict]] = None,
 ) -> Dict:
     """
     Answer query with separate retrieval for each modality.
@@ -328,7 +347,20 @@ def answer_query_grouped_by_modality(
     system_prompt = """You are a precise document analysis assistant.
 Answer based ONLY on provided context. Cite sources. Be factual."""
 
-    user_message = f"""CONTEXT:
+    # Insert optional conversation history (last few turns) to help with follow-ups
+    convo_block = ""
+    if chat_history:
+        parts = []
+        for turn in chat_history[-6:]:
+            role = turn.get('role', 'user')
+            content = turn.get('content', '').strip()
+            if not content:
+                continue
+            parts.append(f"Q: {content}" if role == 'user' else f"A: {content}")
+        if parts:
+            convo_block = "CONVERSATION HISTORY:\n" + "\n".join(parts) + "\n\n"
+
+    user_message = f"""{convo_block}CONTEXT:
 {full_context}
 
 SOURCES:

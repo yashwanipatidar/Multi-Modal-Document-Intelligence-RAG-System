@@ -65,6 +65,10 @@ class OperationTracker:
             
         # Setup Python logging
         self.logger = self._setup_logger()
+        # In-memory chat history cache
+        self.chat_history: List[Dict[str, Any]] = []
+        # Chat persistence defaults
+        self.max_chat_turns = 200  # maximum turns to keep in persisted file
     
     def _setup_logger(self) -> logging.Logger:
         """Setup Python logger"""
@@ -160,6 +164,9 @@ class OperationTracker:
         if self.log_file:
             with open(self.log_file, "a") as f:
                 f.write(json.dumps(log_entry.to_dict()) + "\n")
+
+        # Also persist chat history if present (append-only)
+        # chat entries are stored separately via add_chat_turn
         
         # Console summary
         status_symbol = {
@@ -175,6 +182,93 @@ class OperationTracker:
         )
         
         self.current_operation = None
+
+    # ------------------ Chat Persistence ------------------
+    def add_chat_turn(self, role: str, content: str):
+        """Persist a chat turn to disk and keep in-memory copy.
+
+        By default, persisted content is redacted; pass `redact=False` to persist full content.
+        """
+        # default behavior kept for backward compatibility
+        return self.add_chat_turn_with_options(role, content, redact=True, max_turns=self.max_chat_turns)
+
+    def add_chat_turn_with_options(self, role: str, content: str, redact: bool = True, max_turns: Optional[int] = None):
+        """Persist a chat turn with options for redaction and pruning.
+
+        - `redact`: if True, redact potentially sensitive tokens before writing to disk.
+        - `max_turns`: maximum number of lines to keep in the persisted JSONL file.
+        """
+        def _redact_text(s: str) -> str:
+            # Simple heuristics: redact emails, long digit sequences (credit cards), api keys, and tokens
+            if not s:
+                return s
+            # redact emails
+            s = re.sub(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", "[REDACTED_EMAIL]", s)
+            # redact long digit sequences (>=8), e.g., credit cards / tokens
+            s = re.sub(r"\b\d{8,}\b", "[REDACTED_NUMBER]", s)
+            # redact obvious api key patterns like key=... or api_key: ...
+            s = re.sub(r"(?i)(api[_-]?key|secret|token)\s*[:=]\s*[^\s,;]+", r"\1=[REDACTED]", s)
+            # redact simple bearer tokens
+            s = re.sub(r"Bearer\s+[A-Za-z0-9\-\._~\+\/=]+", "Bearer [REDACTED]", s)
+            return s
+
+        entry = {
+            "timestamp": datetime.now().isoformat(),
+            "role": role,
+            "content": _redact_text(content) if redact else content,
+        }
+
+        # Keep in-memory full (non-redacted) or redacted? we keep the original in memory but persist redacted
+        self.chat_history.append({"timestamp": entry["timestamp"], "role": role, "content": content})
+
+        if self.log_dir:
+            chat_file = self.log_dir / f"chat_{self.session_id}.jsonl"
+            # Append then prune if necessary
+            try:
+                with open(chat_file, "a", encoding="utf-8") as f:
+                    f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+
+                # Prune file to last `max_turns` lines if requested
+                if max_turns is None:
+                    max_turns = self.max_chat_turns
+                if max_turns and chat_file.exists():
+                    # Count lines and trim if necessary
+                    with open(chat_file, "r", encoding="utf-8") as f:
+                        lines = f.readlines()
+                    if len(lines) > max_turns:
+                        # Keep only last max_turns lines
+                        with open(chat_file, "w", encoding="utf-8") as f:
+                            f.writelines(lines[-max_turns:])
+            except Exception:
+                # Non-fatal logging failure
+                self.logger.exception("Failed to persist chat turn")
+
+    def load_chat_history(self) -> List[Dict[str, Any]]:
+        """Load persisted chat history from disk (if available)."""
+        chat_file = None
+        if self.log_dir:
+            chat_file = self.log_dir / f"chat_{self.session_id}.jsonl"
+        if not chat_file or not chat_file.exists():
+            return []
+
+        history = []
+        try:
+            with open(chat_file, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        history.append(json.loads(line))
+                    except Exception:
+                        # skip malformed lines
+                        continue
+        except Exception:
+            return []
+
+        # Update in-memory cache
+        self.chat_history = history
+        return history
     
     def get_operations_summary(self) -> Dict[str, Any]:
         """Get summary of all operations"""
